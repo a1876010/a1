@@ -1,90 +1,134 @@
-import signal
 import socket
-import threading
+import sys
+import os
+import argparse
+import re
 
-class proxy():
-    def __init__(self):
-        # creating a tcp socket
-        self.serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+# 1MB buffer size
+BUFFER_SIZE = 1000000
 
-        # reuse the socket
-        self.serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+# Get the IP address and Port number to use for this web proxy server
+parser = argparse.ArgumentParser()
+parser.add_argument('hostname', help='the IP Address Of Proxy Server')
+parser.add_argument('port', help='the port number of the proxy server')
+args = parser.parse_args()
+proxyHost = args.hostname
+proxyPort = int(args.port)
 
-        self.your_ip = "127.0.0.1" # loop back address
-        self.your_port = 80 # use a port thats open like port 80
+# Create a server socket
+try:
+    serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    print('Created socket')
+except socket.error as err:
+    print(f'Failed to create socket: {err}')
+    sys.exit()
 
-    def shutdown(self):
-        # add your signal shutdown code here
-        pass
+# Bind the server socket
+try:
+    serverSocket.bind((proxyHost, proxyPort))
+    print('Port is bound')
+except socket.error as err:
+    print(f'Port binding failed: {err}')
+    sys.exit()
 
-    def main(self):
-        # shutdown on cntrl c
-        signal.signal(signal.SIGINT, self.shutdown)
+# Listen on the server socket
+try:
+    serverSocket.listen(5)
+    print('Listening to socket')
+except socket.error as err:
+    print(f'Failed to listen: {err}')
+    sys.exit()
 
-        self.serverSocket.bind((self.your_ip, self.your_port))
+# Continuously accept connections
+while True:
+    print('Waiting for connection...')
+    try:
+        clientSocket, clientAddr = serverSocket.accept()
+        print(f'Received a connection from {clientAddr}')
+    except socket.error as err:
+        print(f'Failed to accept connection: {err}')
+        continue
+    
+    # Receive HTTP request from client
+    try:
+        message_bytes = clientSocket.recv(BUFFER_SIZE)
+        message = message_bytes.decode('utf-8')
+        print(f'Received request:\n{message}')
+    except Exception as e:
+        print(f'Failed to receive data: {e}')
+        clientSocket.close()
+        continue
 
-        self.serverSocket.listen(10)
-        self.__clients = {}
+    # Extract the method, URI, and HTTP version
+    requestParts = message.split('\r\n')[0].split()
+    if len(requestParts) < 3:
+        print('Invalid HTTP request received')
+        clientSocket.close()
+        continue
+    
+    method, URI, version = requestParts
+    
+    # Process URL
+    URI = re.sub('^(/?)http(s?)://', '', URI, count=1)
+    URI = URI.replace('/..', '')
+    resourceParts = URI.split('/', 1)
+    hostname = resourceParts[0]
+    resource = '/' + resourceParts[1] if len(resourceParts) == 2 else '/'
+    
+    print(f'Method: {method}\nURI: {URI}\nVersion: {version}')
 
-        while True:
-            # establish the connection
-            (clientSocket, client_address) = self.serverSocket.accept()
+    # Check cache
+    cacheLocation = f'./cache/{hostname}{resource.replace("/", "_")}'
+    if os.path.isfile(cacheLocation):
+        print(f'Cache hit: {cacheLocation}')
+        try:
+            with open(cacheLocation, 'rb') as cacheFile:
+                response = cacheFile.read()
+                clientSocket.sendall(response)
+                print('Sent cached response to client')
+        except Exception as e:
+            print(f'Error reading cache: {e}')
+    else:
+        print('Cache miss, forwarding request to origin server')
+        
+        # Connect to origin server
+        try:
+            originServerSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            originServerSocket.connect((hostname, 80))
+            print(f'Connected to origin server: {hostname}')
 
-            d = threading.Thread(name=self._getClientName(client_address),
-                                 target=self.proxy_thread,
-                                 args=(clientSocket, client_address))
-            d.setDaemon(True)
-            d.start()
+            # Forward request to origin server
+            request = f'{method} {resource} {version}\r\nHost: {hostname}\r\nConnection: close\r\n\r\n'
+            originServerSocket.sendall(request.encode())
+            print('Request forwarded to origin server')
+        
+            # Receive response from origin server
+            response = b''
+            while True:
+                part = originServerSocket.recv(BUFFER_SIZE)
+                if not part:
+                    break
+                response += part
+            
+            print('Received response from origin server')
+            
+            # Save to cache if no-cache is not present
+            if b'Cache-Control: no-cache' not in response:
+                os.makedirs(os.path.dirname(cacheLocation), exist_ok=True)
+                with open(cacheLocation, 'wb') as cacheFile:
+                    cacheFile.write(response)
+                    print('Saved response to cache')
+            
+            # Send response to client
+            clientSocket.sendall(response)
+            print('Sent response to client')
+            
+        except Exception as e:
+            print(f'Error handling request: {e}')
+        finally:
+            originServerSocket.close()
+    
+    clientSocket.close()
+    print('Connection closed')
 
-        # get the request from browser
-        request = conn.recv(4096)
-
-        # parse the first line
-        first_line = request.split('\n')[0]
-
-        # get url
-        url = first_line.split(' ')[1]
-
-        http_pos = url.find("://")
-        if http_pos == -1:
-            temp = url
-        else:
-            temp = url[(http_pos + 3):]
-
-        port_pos = temp.find(":")
-
-        # find end of web server
-        webserver_pos = temp.find("/")
-        if webserver_pos == -1:
-            webserver_pos = len(temp)
-
-        webserver = ""
-        port = -1
-
-        if port_pos == -1 or webserver_pos < port_pos:
-
-            # default port
-            port = 80
-            webserver = temp[:webserver_pos]
-
-        else:  # specific port
-            port = int((temp[(port_pos + 1):])[:webserver_pos - port_pos - 1])
-            webserver = temp[:port_pos]
-
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1)
-        s.connect((webserver, port))
-        s.sendall(request)
-
-        while 1:
-            # receive data from web server
-            data = s.recv(4096)
-
-            if len(data) > 0:
-                conn.send(data)  # send to browser/client
-
-            else:
-                break
-
-p = proxy()
-p.main()
