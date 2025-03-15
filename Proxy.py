@@ -131,4 +131,3 @@ while True:
     
     clientSocket.close()
     print('Connection closed')
-
