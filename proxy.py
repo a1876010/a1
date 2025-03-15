@@ -3,6 +3,8 @@ import sys
 import os
 import argparse
 import re
+import hashlib
+import threading
 
 BUFFER_SIZE = 1000000  # 1MB buffer size
 
@@ -17,52 +19,28 @@ proxyPort = args.port
 # Create a server socket
 try:
     serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    print('Created socket')
-except socket.error as err:
-    print(f'Failed to create socket: {err}')
-    sys.exit()
-
-# Bind the server socket to a host and port
-try:
     serverSocket.bind((proxyHost, proxyPort))
-    print('Port is bound')
-except socket.error as err:
-    print(f'Port binding failed: {err}')
-    sys.exit()
-
-# Listen for incoming connections
-try:
     serverSocket.listen(10)
-    print('Listening on port', proxyPort)
+    print(f'Proxy server listening on {proxyHost}:{proxyPort}')
 except socket.error as err:
-    print(f'Failed to listen: {err}')
+    print(f'Failed to set up server: {err}')
     sys.exit()
 
-# Continuously accept connections
-while True:
-    print('Waiting for a connection...')
-    try:
-        clientSocket, clientAddress = serverSocket.accept()
-        print(f'Received a connection from {clientAddress}')
-    except socket.error as err:
-        print(f'Failed to accept connection: {err}')
-        sys.exit()
-
-    # Receive HTTP request from client
+def handle_client(clientSocket):
     try:
         message_bytes = clientSocket.recv(BUFFER_SIZE)
         message = message_bytes.decode('utf-8')
         print('Received request:\n' + message)
-    except socket.error as err:
+    except Exception as err:
         print(f'Error receiving data: {err}')
         clientSocket.close()
-        continue
+        return
 
     # Extract HTTP request details
     requestParts = message.split('\r\n')[0].split()
     if len(requestParts) < 3:
         clientSocket.close()
-        continue
+        return
     method, URI, version = requestParts[:3]
     print(f'Method: {method}\nURI: {URI}\nVersion: {version}')
 
@@ -72,9 +50,9 @@ while True:
     hostname = resourceParts[0]
     resource = '/' + resourceParts[1] if len(resourceParts) == 2 else '/'
 
-    cacheLocation = os.path.join('./cache', hostname, resource.strip('/'))
-    if cacheLocation.endswith('/'):
-        cacheLocation += 'default'
+    # Hash the resource for caching
+    hashed_filename = hashlib.md5(resource.encode()).hexdigest()
+    cacheLocation = os.path.join('./cache', hostname, hashed_filename)
     print(f'Cache location: {cacheLocation}')
 
     # Check if resource is in cache
@@ -120,6 +98,18 @@ while True:
             print(f'Error fetching from origin server: {err}')
         finally:
             originServerSocket.close()
-
-    # Close client socket
+    
     clientSocket.close()
+
+# Accept multiple connections using threading
+while True:
+    try:
+        clientSocket, clientAddress = serverSocket.accept()
+        print(f'Received a connection from {clientAddress}')
+        threading.Thread(target=handle_client, args=(clientSocket,)).start()
+    except KeyboardInterrupt:
+        print('\nShutting down proxy server.')
+        serverSocket.close()
+        sys.exit()
+    except socket.error as err:
+        print(f'Connection error: {err}')
