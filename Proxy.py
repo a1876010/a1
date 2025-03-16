@@ -143,4 +143,3 @@ while True:
     print('Closing connections')
     originServerSocket.close()
     clientSocket.close()
-
