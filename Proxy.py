@@ -5,11 +5,9 @@ import argparse
 import re
 import time
 
-# 1MB buffer size
 BUFFER_SIZE = 1000000
 CACHE_DIR = "./cache"
 
-# Get the IP address and Port number to use for this web proxy server
 parser = argparse.ArgumentParser()
 parser.add_argument('hostname', help='IP Address of Proxy Server')
 parser.add_argument('port', type=int, help='Port Number of Proxy Server')
@@ -25,7 +23,7 @@ if not os.path.exists(CACHE_DIR):
 # Create a server socket
 try:
     serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow address reuse
+    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     serverSocket.bind((proxyHost, proxyPort))
     serverSocket.listen(5)
     print(f"Proxy listening on {proxyHost}:{proxyPort}")
@@ -47,7 +45,6 @@ while True:
         message = message_bytes.decode('utf-8')
         print(f"Received request:\n{message}")
 
-        # Extract HTTP request components
         requestParts = message.split()
         if len(requestParts) < 3:
             print("Invalid request format.")
@@ -55,7 +52,7 @@ while True:
             continue
 
         method, URI, version = requestParts[0], requestParts[1], requestParts[2]
-        print(f"Method: {method}\nURI: {URI}\nVersion: {version}")
+        print(f"Method: {method}, URI: {URI}, Version: {version}")
 
         # Remove protocol from URI
         URI = re.sub(r'^(/?)http(s?)://', '', URI, count=1)
@@ -69,7 +66,7 @@ while True:
 
         # Cache location
         cacheFilePath = os.path.join(CACHE_DIR, hostname.replace("/", "_") + resource.replace("/", "_"))
-        
+
         # Check if resource is in cache
         if os.path.isfile(cacheFilePath):
             with open(cacheFilePath, 'rb') as cacheFile:
@@ -120,6 +117,13 @@ while True:
                 clientSocket.close()
                 continue
 
+        # Handle 404 Not Found
+        if b"HTTP/1.1 404" in responseData:
+            print("Page not found (404)")
+            clientSocket.sendall(b"HTTP/1.1 404 Not Found\r\n\r\n")
+            clientSocket.close()
+            continue
+
         # Send response to client
         clientSocket.sendall(responseData)
 
@@ -145,4 +149,5 @@ while True:
     except Exception as e:
         print(f"Error processing request: {e}")
         clientSocket.close()
+
 
