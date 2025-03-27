@@ -28,7 +28,7 @@ except:
   sys.exit()
 
 try:
-  # Bind the the server socket to a host and port
+  # Bind the server socket to a host and port
   # ~~~~ INSERT CODE ~~~~
   serverSocket.bind((proxyHost, proxyPort))
   # ~~~~ END CODE INSERT ~~~~
