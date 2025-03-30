@@ -28,7 +28,7 @@ except:
   sys.exit()
 
 try:
-  # Bind the server socket to a host and port
+  # Bind the the server socket to a host and port
   # ~~~~ INSERT CODE ~~~~
   serverSocket.bind((proxyHost, proxyPort))
   # ~~~~ END CODE INSERT ~~~~
@@ -150,7 +150,13 @@ while True:
       # originServerRequestHeader is the second line in the request
       # ~~~~ INSERT CODE ~~~~
       originServerRequest = method + " " + resource + " " + version
-      originServerRequestHeader = "Host: " + hostname + "\r\nConnection: close"
+      originServerRequestHeader = "Host: " + hostname
+      # Extract Connection header from client request if it exists
+      headers = message.split('\r\n')
+      for header in headers:
+          if header.lower().startswith('connection:'):
+              originServerRequestHeader += "\r\nConnection: " + header.split(':', 1)[1].strip()
+              break
       # ~~~~ END CODE INSERT ~~~~
 
       # Construct the request to send to the origin server
