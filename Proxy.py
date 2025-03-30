@@ -204,7 +204,7 @@ while True:
       # ~~~~ END CODE INSERT ~~~~
       cacheFile.close()
       print ('Sent to the client:')
-      print ('> ' + ''.join(response_with_updated_headers)）
+      print ('> ' + ''.join(response_with_updated_headers))
       use_cached = True
     else:
       raise FileNotFoundError("Cache expired")
