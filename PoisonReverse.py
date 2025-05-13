@@ -1,5 +1,3 @@
-
-
 #Importing utilities copy and sys
 import copy
 import sys
